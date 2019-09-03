@@ -1,61 +1,49 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[1]:
-
-
 import re
-import argparse
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import numpy as np
-import pickle
-import sys
 from Bio import SeqIO
 from multiprocessing import Pool
 from functools import partial
-from datetime import datetime
 
 # SETTING
-pixel_max = 254 #Customerization
+PIXEL_MAX = 254 #Customerization
 
 # CHANNEL 0: BASE
-base_color_stride = 70 #Customerization
-offset_a_g = 40 #Customerization
-offset_t_c = 30 #Customerization
+BASE_COLOR_STRIDE = 70 #Customerization
+OFFSET_A_G = 40 #Customerization
+OFFSET_T_C = 30 #Customerization
 
 # CHANNEL 1: BASE QUALITY
-default_quality = 0
-base_quality_cap = 40
+DEFAULT_QUALITY = 0
+BASE_QUALITY_CAP = 40
 
 # CHANNEL 2: MAPPING QUALITY
-mapping_set_empty = 0 #Customerization
-mapping_quality_cap = 60 #Customerization
+MAPPING_SET_EMPTY = 0 #Customerization
+MAPPING_QUALITY_CAP = 60 #Customerization
 
 # CHANNEL 3: ON POSITIVE STRAND
-set_empty = 0 #Customerization
-positive_strand = 70 #Customerization
-negative_strand = 240 #Customerization
+SET_EMPTY = 0 #Customerization
+POSITIVE_STRAND = 70 #Customerization
+NEGATIVE_STRAND = 240 #Customerization
 
 # CHANNEL 4: MATCH REFERENCE
-pixel_max = 254 #Customerization
-not_match_ref = pixel_max * 1 #Customerization
-match_ref = pixel_max * 0.2 #Customerization
-ref_not_provided = 255 #Customerization
+NO_MATCH_REF = PIXEL_MAX * 1 #Customerization
+MATCH_REF = PIXEL_MAX * 0.2 #Customerization
+REF_NOT_PROVIDED = 255 #Customerization
 
 # TO RGB
-pixel_max_empty_def = 255
+PIXEL_MAX_EMPTY_DEF = 255
 
-
-'''
-Color encoding
-'''
 # CHANNEL 1: Base quality
 def base_to_color_full_array_input(x):
-    A = base_color_stride * 3 + offset_a_g
-    T = base_color_stride * 2 + offset_t_c
-    C = base_color_stride * 1 + offset_t_c
-    G = base_color_stride * 0 + offset_a_g
+    '''
+    Color encoding
+    '''
+    A = BASE_COLOR_STRIDE * 3 + OFFSET_A_G
+    T = BASE_COLOR_STRIDE * 2 + OFFSET_T_C
+    C = BASE_COLOR_STRIDE * 1 + OFFSET_T_C
+    G = BASE_COLOR_STRIDE * 0 + OFFSET_A_G
     empty_to_fill = np.zeros(x.shape, dtype = np.int16)
     empty_to_fill[x == "A"] = A
     empty_to_fill[x == "T"] = T
@@ -71,12 +59,11 @@ def base_to_color_full_array_input(x):
 
 # CHANNEL 2: Mapping quality
 def mapping_quality_fill(array, mapping_quality):
-    
-    to_fill = min(mapping_quality, mapping_quality_cap) / mapping_quality_cap * pixel_max
-    mapping_quality_temp = np.full(array.shape, mapping_set_empty, dtype = np.int16)
+    to_fill = min(mapping_quality, MAPPING_QUALITY_CAP) / MAPPING_QUALITY_CAP * PIXEL_MAX
+    mapping_quality_temp = np.full(array.shape, MAPPING_SET_EMPTY, dtype = np.int16)
     mapping_quality_temp[array != ""] = to_fill
-    mapping_quality_temp[array == "N"] = mapping_set_empty
-    mapping_quality_temp[array == "D"] = mapping_set_empty
+    mapping_quality_temp[array == "N"] = MAPPING_SET_EMPTY
+    mapping_quality_temp[array == "D"] = MAPPING_SET_EMPTY
     
     return mapping_quality_temp
     
@@ -84,24 +71,23 @@ def mapping_quality_fill(array, mapping_quality):
 # CHANNEL 3: On positive strand
 def on_positive_strand_fill(array, positive_flag):
     
-    on_positive_strand_temp = np.full(array.shape, set_empty, dtype = np.int16)
-    to_fill = positive_strand
+    on_positive_strand_temp = np.full(array.shape, SET_EMPTY, dtype = np.int16)
+    to_fill = POSITIVE_STRAND
 
     binary_flag = np.binary_repr(positive_flag)
     if (len(binary_flag) >= 5) and (list(binary_flag)[-5] == "1"):
-        to_fill = negative_strand
+        to_fill = NEGATIVE_STRAND
     
     on_positive_strand_temp[array != ""] = to_fill
-    on_positive_strand_temp[array == "N"] = set_empty
-    on_positive_strand_temp[array == "D"] = set_empty
+    on_positive_strand_temp[array == "N"] = SET_EMPTY
+    on_positive_strand_temp[array == "D"] = SET_EMPTY
 
     return on_positive_strand_temp
-
 
 # CHANNEL 4: Match reference
 def match_ref_fill(depth, window, array):
     
-    empty = np.full((depth, window), ref_not_provided, dtype = np.int16)
+    empty = np.full((depth, window), REF_NOT_PROVIDED, dtype = np.int16)
     for i in np.arange(0, array.shape[1]):
         for j in np.arange(1, array.shape[0]):
             if array[j,i] == "":
@@ -110,21 +96,17 @@ def match_ref_fill(depth, window, array):
                 if array[0,i] == "N":
                     break
                 else:
-                    empty[j,i] = not_match_ref
+                    empty[j,i] = NO_MATCH_REF
             elif array[j,i] == array[0,i]:
-                empty[j,i] = match_ref
+                empty[j,i] = MATCH_REF
             else:
-                empty[j,i] = ref_not_provided
+                empty[j,i] = REF_NOT_PROVIDED
     return empty
 
-
 # COMBINE CHANNEL TO RGB
-def channels_to_RGB(pixel_max_empty_def,
-                    pre_image_base_color, 
-                    pre_image_mapping_quality):
-    pre_image_mapping_quality[:,0,:] = pixel_max_empty_def
-    alpha = pre_image_mapping_quality / pixel_max_empty_def
-    #np.multiply(pre_image_base_color, alpha)
+def channels_to_rgb(pre_image_base_color, pre_image_mapping_quality):
+    pre_image_mapping_quality[:,0,:] = PIXEL_MAX_EMPTY_DEF
+    alpha = pre_image_mapping_quality / PIXEL_MAX_EMPTY_DEF
 
     RGB = np.empty((pre_image_base_color.shape[0],pre_image_base_color.shape[1],pre_image_base_color.shape[2]), dtype = np.int16)
     RGB[:,:,:] = np.multiply(pre_image_base_color, alpha)
@@ -136,16 +118,16 @@ def consecutive(data, stepsize=1):
 def make_list_of_searching_interval_of_scaffold(scaffold_length, to_use_selected_scaffold_df):
     mask = np.zeros(scaffold_length, dtype = bool)
     searching_interval_selected = np.arange(1,(scaffold_length + 1))
-    searching_locus_list = pd.Series([np.arange(a, b) for a, b in zip(to_use_selected_scaffold_df["expand start"], (to_use_selected_scaffold_df["expand end"] + 1))], to_use_selected_scaffold_df.index)
+    searching_locus_list = pd.Series([np.arange(a, b) for a, b in zip(to_use_selected_scaffold_df["expand start"],
+                                                                      (to_use_selected_scaffold_df["expand end"] + 1))],
+                                     to_use_selected_scaffold_df.index)
     for locus in searching_locus_list:
         mask[locus] = True
     searching_interval_unoverlapped = searching_interval_selected[mask]
 
     return consecutive(searching_interval_unoverlapped)
 
-'''
-Preprocessing
-'''
+
 def cigar_to_list(cigar): # NOT NEED TO USE THIS! THIS FUNCTION IS INCLUDED IN refine_read_by_cigar BELOW
     '''
     Deal with cigar 
@@ -336,8 +318,10 @@ def find_insertion_forbackward(index, skip_range, window, read_selected_matrix, 
                 backward_i_base.append(to_use_selected_scaffold_df["read"][reads][insertion_index]) # Add the base
                 backward_i_read_order.append(read_order) # Add the read order which means the depth if plus 1 cause the first is ref  
                 
-    forward_df = pd.DataFrame({"read": forward_i_read, "index": forward_i_index, "base":forward_i_base, "read order":forward_i_read_order}) # Make the dataframe
-    backward_df = pd.DataFrame({"read": backward_i_read, "index": backward_i_index, "base":backward_i_base, "read order":backward_i_read_order}) # Make the dataframe
+    forward_df = pd.DataFrame({"read": forward_i_read, "index": forward_i_index,
+                               "base":forward_i_base, "read order":forward_i_read_order}) # Make the dataframe
+    backward_df = pd.DataFrame({"read": backward_i_read, "index": backward_i_index,
+                                "base":backward_i_base, "read order":backward_i_read_order}) # Make the dataframe
     
     return forward_df, backward_df
 
@@ -396,10 +380,10 @@ def insertion_fill_in(index, depth, window, pre_image_char_part, forward_df, bac
     
     return pre_image_char_part_output
 
-'''
-Read fasta file
-'''
 def read_fasta(fasta):
+    '''
+    Read fasta file
+    '''
     fasta_sequences = SeqIO.parse(open(fasta),"fasta")
     fasta_name = []
     fasta_sequence = []
@@ -412,11 +396,11 @@ def read_fasta(fasta):
     fasta_df["len"] = fasta_df["sequence"].str.len()
     return fasta_df
 
-'''
-Read sam file
-'''
+
 def read_sam(samfile):
-    # Read sam file
+    '''
+    Read sam file
+    '''
     sam=[]
     with open(samfile, "r") as f:
         for line in f.readlines():
@@ -424,11 +408,11 @@ def read_sam(samfile):
     sam = np.array(sam)
     return sam
 
-'''
-Read bed file
-'''
+
 def read_bed(bedfile):
-    # Read bed file
+    '''
+    Read bed file
+    '''
     bed=[]
     with open(bedfile, "r") as f:
         for line in f.readlines():
@@ -436,10 +420,11 @@ def read_bed(bedfile):
     bed = np.array(bed)
     return bed
 
-'''
-Scaffold fliter
-'''
+
 def scaffold_min_and_max(fasta_df):
+    '''
+    Scaffold fliter
+    '''
     minimum = int(input("Minimum: "))
     maximum = int(input("Maximum: "))
     mask_min = (fasta_df["len"] >= minimum)
@@ -454,10 +439,11 @@ def scaffold_min_and_max(fasta_df):
         print(fasta_df_fliter["scaffold"])
         return fasta_df_fliter, minimum, maximum
     
-'''
-For each scaffold, find coveraging read in the sam
-'''
+
 def find_read_based_on_scaffold(scaffold_name, sam):
+    '''
+    For each scaffold, find coveraging read in the sam
+    '''
     # Find index of selected scaffold in bam
     scaffold_in_sam = list([i for i,item in enumerate(sam) if scaffold_name in item])
 
@@ -467,10 +453,11 @@ def find_read_based_on_scaffold(scaffold_name, sam):
     selected_scaffold_df = pd.DataFrame(selected_scaffold_df)
     return selected_scaffold_df
 
-'''
-Select useful information in dafaframe of selected scaffold
-'''
+
 def make_read_scaffold_df(fasta_df, selected_scaffold_df, scaffold_name, expand = 0):
+    '''
+    Select useful information in dafaframe of selected scaffold
+    '''
     scaffold_length = fasta_df[fasta_df["scaffold"] == scaffold_name]["len"].values[0]
     
     pd.options.mode.chained_assignment = None
@@ -499,21 +486,23 @@ def make_read_scaffold_df(fasta_df, selected_scaffold_df, scaffold_name, expand 
     
     return to_use_selected_scaffold_df
 
-'''
-Make a matrix of reads which meet the criteria of each locus
-'''
-def make_read_selected_matrix_find_reads(to_use_selected_scaffold_df, ALL_TOUCH_INCLUDED, window, depth, ONLY_FILL_THE_LONGEST, index):
-    mask1 = to_use_selected_scaffold_df["start"] <= index + ALL_TOUCH_INCLUDED * ((window + 1) / 2)
-    mask2 = to_use_selected_scaffold_df["refined end"] >= index + ALL_TOUCH_INCLUDED * ((window + 1) / 2)
+
+def make_read_selected_matrix_find_reads(to_use_selected_scaffold_df, all_torch_included, window, depth, only_find_the_longest, index):
+    '''
+    Make a matrix of reads which meet the criteria of each locus
+    '''
+    mask1 = to_use_selected_scaffold_df["start"] <= index + all_torch_included * ((window + 1) / 2)
+    mask2 = to_use_selected_scaffold_df["refined end"] >= index + all_torch_included * ((window + 1) / 2)
     scaffold_df_selected_by_mask = to_use_selected_scaffold_df[(mask1 & mask2)]
     read_selected_array = np.empty(depth)
     read_selected_array[:] = np.nan
-    if ONLY_FILL_THE_LONGEST == True:
+    if only_find_the_longest:
         if len(scaffold_df_selected_by_mask["read length"]) != 0:
             max_length_read = scaffold_df_selected_by_mask["read length"].idxmax()
             read_start = to_use_selected_scaffold_df["start"][max_length_read]
             
-            if to_use_selected_scaffold_df["refined read"][max_length_read][(index - read_start)] == "N" or to_use_selected_scaffold_df["refined read"][max_length_read][(index - read_start)] == "N":
+            #???
+            if to_use_selected_scaffold_df["refined read"][max_length_read][(index - read_start)] == "N":
                 full_read_array = scaffold_df_selected_by_mask.index[0]
                 if type(full_read_array) is np.int64:
                     read_selected_array[0:1] = scaffold_df_selected_by_mask["read length"].idxmax()
@@ -538,7 +527,8 @@ def make_read_selected_matrix_find_reads(to_use_selected_scaffold_df, ALL_TOUCH_
     
     return read_selected_array
 
-def make_read_selected_matrix(scaffold_name, searching_interval, to_use_selected_scaffold_df, ALL_TOUCH_INCLUDED, window, skip_range, depth, ONLY_FILL_THE_LONGEST, core):
+def make_read_selected_matrix(scaffold_name, searching_interval, to_use_selected_scaffold_df,
+                              all_torch_included, window, skip_range, depth, only_find_the_longest, core):
     
     # Interval for searching
     searching_interval_length = len(searching_interval)
@@ -548,7 +538,8 @@ def make_read_selected_matrix(scaffold_name, searching_interval, to_use_selected
     if __name__ == "__main__" :  
         
         pool = Pool(core) # Pool() 
-        func = partial(make_read_selected_matrix_find_reads, to_use_selected_scaffold_df, ALL_TOUCH_INCLUDED, window, depth, ONLY_FILL_THE_LONGEST)
+        func = partial(make_read_selected_matrix_find_reads, to_use_selected_scaffold_df,
+                       all_torch_included, window, depth, only_find_the_longest)
         read_selected_matrix = pool.map(func, searching_interval) 
         pool.close()  
         pool.join()   
@@ -557,10 +548,14 @@ def make_read_selected_matrix(scaffold_name, searching_interval, to_use_selected
         
     return read_selected_matrix
 
-'''
-Make a 4 dimension matrix of pre-image base 
-'''
-def image_pileup_Parallelism(scaffold_name, fasta_df, to_use_selected_scaffold_df, read_selected_matrix, depth, window, skip_range, on_positive_strand_not_provide, index, INSERTION = False, REVERSE_FOR_NEG = True):
+
+def image_pileup_parallelism(scaffold_name, fasta_df, to_use_selected_scaffold_df,
+                             read_selected_matrix, depth, window, skip_range,
+                             on_positive_strand_not_provide,
+                             index, insertion = False, reverse_for_neg = True):
+    '''
+    Make a 4 dimension matrix of pre-image base 
+    '''
     # To search the base based on index
     # From index=0~the last one, means from the first one to the last
     pre_pre_image_char_matrix = np.chararray((depth, window), unicode = True)
@@ -606,14 +601,13 @@ def image_pileup_Parallelism(scaffold_name, fasta_df, to_use_selected_scaffold_d
 
             if read_start > fasta_fill_index_start:
                 image_read_fill_start = int(read_start - fasta_fill_index_start)
-                pre_pre_image_char_matrix[(i+1), image_read_fill_start:image_read_fill_end] = np.array(list(to_use_selected_scaffold_df["refined read"][reads][:read_fill_end]))
-
+                array_ = np.array(list(to_use_selected_scaffold_df["refined read"][reads][:read_fill_end]))
             elif read_end < fasta_fill_index_end:
                 image_read_fill_end = int(read_end - fasta_fill_index_end)
-                pre_pre_image_char_matrix[(i+1), image_read_fill_start:image_read_fill_end] = np.array(list(to_use_selected_scaffold_df["refined read"][reads][read_fill_start:]))
-
+                array_ = np.array(list(to_use_selected_scaffold_df["refined read"][reads][read_fill_start:]))
             else:    
-                pre_pre_image_char_matrix[(i+1), image_read_fill_start:image_read_fill_end] = np.array(list(to_use_selected_scaffold_df["refined read"][reads][read_fill_start:read_fill_end]))
+                array_ = np.array(list(to_use_selected_scaffold_df["refined read"][reads][read_fill_start:read_fill_end]))
+            pre_pre_image_char_matrix[(i+1), image_read_fill_start:image_read_fill_end] = array_
     
     ##################### DEAL WITH N #######################################\
     for i in np.arange(0, pre_pre_image_char_matrix.shape[1]): # For all the element in the window
@@ -630,14 +624,14 @@ def image_pileup_Parallelism(scaffold_name, fasta_df, to_use_selected_scaffold_d
             if base_count_list_sort[-1] != base_count_list_sort[-2]: # To check if there any duplicated most frequent elements
                 pre_pre_image_char_matrix[0, i] == base_unique_list[base_count_list.argmax()] # If no, fill the most frequent one
     
-    ####################################### INSERTION #######################################
-    if INSERTION == True:
+    ####################################### insertion #######################################
+    if insertion:
         forward_df, backward_df = find_insertion_forbackward(index, skip_range, window, read_selected_matrix, to_use_selected_scaffold_df)
         if (len(forward_df) != 0) or  (len(backward_df) != 0): # If there is any insertion, use pre_image_char function
             pre_pre_image_char_matrix = insertion_fill_in(index, depth, window, pre_pre_image_char_matrix, forward_df, backward_df)
             
     ####################################### REVERSE STRAND IF ON NEGATIVE STRAND #######################################
-    if REVERSE_FOR_NEG == True:
+    if reverse_for_neg:
         if pre_pre_image_char_matrix.shape[0] == 2:
             reads = read_selected_matrix[(index - skip_range)][0]
             if not np.isnan(reads):
@@ -652,13 +646,13 @@ def image_pileup_Parallelism(scaffold_name, fasta_df, to_use_selected_scaffold_d
                     reverse_temp[pre_pre_image_char_matrix == "G"] = "C"
                     pre_pre_image_char_matrix = reverse_temp
         else:
-            print("REVERSE_FOR_NEG is only for depth=2")
+            print("reverse_for_neg is only for depth=2")
     
     ####################################### COLOR
     pre_image_base_color = base_to_color_full_array_input(pre_pre_image_char_matrix) 
     
     ####################################### MAPPING QUALITY
-    pre_image_mapping_quality_temp = np.full(pre_pre_image_char_matrix.shape, mapping_set_empty)
+    pre_image_mapping_quality_temp = np.full(pre_pre_image_char_matrix.shape, MAPPING_SET_EMPTY)
     
     for i, reads in enumerate(read_selected_matrix[(index - skip_range)]):
         # If there is no read or until the end of the coverage, jump to the next locus
@@ -667,18 +661,6 @@ def image_pileup_Parallelism(scaffold_name, fasta_df, to_use_selected_scaffold_d
         else:
             mapping_quality = to_use_selected_scaffold_df["mapping quality"][reads]
             pre_image_mapping_quality_temp[(i + 1), :] = mapping_quality_fill(pre_pre_image_char_matrix[(i+1), :], mapping_quality)
-    ####################################### ON POSITIVE STRAND
-    #on_positive_strand_temp = np.full(pre_pre_image_char_matrix.shape, on_positive_strand_not_provide)
-    #
-    #for i, reads in enumerate(read_selected_matrix[(index - skip_range)]):
-    #    # If there is no read or until the end of the coverage, jump to the next locus
-    #    if np.isnan(reads):
-    #        break
-    #    else:
-    #        positive_flag = to_use_selected_scaffold_df["flag"][reads]
-    #        on_positive_strand_temp[(i + 1), :] = on_positive_strand_fill(pre_pre_image_char_matrix[(i+1), :], positive_flag)
-    ####################################### MATCH REF
-    #pre_image_match_ref_temp = match_ref_fill(depth, window, pre_pre_image_char_matrix)
     
     return pre_image_base_color, pre_image_mapping_quality_temp
 
@@ -691,11 +673,11 @@ def image_pileup(scaffold_name,
                  depth, 
                  skip_range,
                  searching_interval, 
-                 pixel_max, 
+                 PIXEL_MAX, 
                  bias_of_read, 
                  mapping_quality_not_provide, 
                  on_positive_strand_not_provide, 
-                 not_match_ref, core):
+                 NO_MATCH_REF, core):
     
     # 3 dimention maxtrix initialization: base(char), base color(int), base quality(char), on postive strand(int)
     ## x: searching_interval 
@@ -713,13 +695,12 @@ def image_pileup(scaffold_name,
     if __name__ == "__main__" :  
         pre_image_base_color = []
         pre_image_mapping_quality = []
-        pre_image_on_positive_strand = []
-        pre_image_match_ref = []
-        
-        
+        pre_image_on_POSITIVE_STRAND = []
+        pre_image_MATCH_REF = []
         
         pool = Pool(core) # Pool() 
-        func = partial(image_pileup_Parallelism, scaffold_name, fasta_df, to_use_selected_scaffold_df, read_selected_matrix, depth, window, skip_range, on_positive_strand_not_provide)
+        func = partial(image_pileup_parallelism, scaffold_name, fasta_df, to_use_selected_scaffold_df,
+                       read_selected_matrix, depth, window, skip_range, on_positive_strand_not_provide)
         for pre_image_base_color_locus, pre_image_mapping_quality_locus in pool.map(func, searching_interval, chunksize=1000): 
             pre_image_base_color.append(pre_image_base_color_locus)
             pre_image_mapping_quality.append(pre_image_mapping_quality_locus)
@@ -727,271 +708,7 @@ def image_pileup(scaffold_name,
         pool.close()  
         pool.join()  
         
-    #pre_image_char = np.array(pre_image_char)
     pre_image_base_color = np.array(pre_image_base_color)
     pre_image_mapping_quality = np.array(pre_image_mapping_quality)
     
- 
     return pre_image_base_color, pre_image_mapping_quality
-def consider_read_of_one_scaffold_by_bed_region(fasta_df, sam, bed_name, scaffold_name, core, window, depth, expand, output, ALL_TOUCH_INCLUDED = 0, ONLY_FILL_THE_LONGEST=True):
-    bed = read_bed(bed_name)
-    bed_df = pd.DataFrame(bed)
-    bed_df = bed_df[[0,1,2,3]]
-    bed_df.columns = ["scaffold","start","end","label"]
-    
-    if scaffold_name != "all_scaffold":
-        
-        bed_selected_df = bed_df[bed_df["scaffold"]==scaffold_name]
-        if len(bed_selected_df) == 0:
-            print("There is no scaffold named: ",scaffold_name)
-            print("Please choose the scaffold below:")
-            print(bed_df["scaffold"].unique())
-            sys.exit("ERROR! known scaffold name")
-        
-        total_process = len(bed_selected_df)
-        right_process = 1
-
-        start_time = datetime.now()
-        scaffold_image_dict = {}
-        scaffold_length = fasta_df[fasta_df["scaffold"] == scaffold_name]["len"].values[0]
-
-        # Select useful information in dafaframe of selected scaffold
-        selected_scaffold_df = find_read_based_on_scaffold(scaffold_name, sam)
-
-        if len(selected_scaffold_df) == 0:
-            print("no covered reads")
-            print("==========================================")
-            sys.exit("ERROR! no covered reads")
-            
-
-        to_use_selected_scaffold_df = make_read_scaffold_df(fasta_df, selected_scaffold_df, scaffold_name, expand)
-        if len(to_use_selected_scaffold_df) == 0:
-            print("no covered reads")
-            print("==========================================")
-            sys.exit("ERROR! no covered reads")
-        to_use_selected_scaffold_df = to_use_selected_scaffold_df.sort_values(by=["start"]) # Sort the reads by start locus
-
-
-        for bed_index in bed_selected_df.index:
-            start = int(bed_df.iloc[bed_index]["start"])
-            end = int(bed_df.iloc[bed_index]["end"])
-            label = bed_df.iloc[bed_index]["label"]
-            ######
-            fragment = np.arange((start+1),(end+1))
-
-            searching_interval = fragment
-            skip_range = fragment[0] #Customerization # MUST START FROM 1
-            start_time_fragment = datetime.now()
-
-            store_name = scaffold_name + "|" + str(fragment[0]) + " to " + str(fragment[-1]) + "|"+label
-            print("Start process ",right_process," / ",total_process," : ",store_name)
-            print("Step 1: finding reads", end='')
-            start_time_temp = datetime.now()
-            read_selected_matrix = make_read_selected_matrix(scaffold_name, 
-                                                             searching_interval, 
-                                                             to_use_selected_scaffold_df, 
-                                                             ALL_TOUCH_INCLUDED,
-                                                             window, skip_range, 
-                                                             depth, ONLY_FILL_THE_LONGEST, core)
-            end_time_temp  = datetime.now()
-            print(" | Duration: {}".format(end_time_temp - start_time_temp))
-
-
-            # Make a 3 dimension image
-            pixel_max = 254  #Customerization
-            bias_of_read = 0 #Customerization
-            mapping_quality_not_provide = 255 #Customerization
-            on_positive_strand_not_provide = 255 #Customerization
-            not_match_ref = pixel_max * 1 #Customerization
-
-            print("Step 2: image pileup", end='')
-            start_time_temp = datetime.now()
-            pre_image_base_color, pre_image_mapping_quality = image_pileup(scaffold_name,
-                                     fasta_df, 
-                                     read_selected_matrix, 
-                                     to_use_selected_scaffold_df, 
-                                     window, 
-                                     depth,
-                                     skip_range,
-                                     searching_interval, 
-                                     pixel_max, 
-                                     bias_of_read, 
-                                     mapping_quality_not_provide, 
-                                     on_positive_strand_not_provide, 
-                                     not_match_ref, core)
-            end_time_temp  = datetime.now()
-            print(" | Duration: {}".format(end_time_temp - start_time_temp))
-
-            print("Step 3: combination", end='')
-            start_time_temp = datetime.now()
-            FINAL_RGB = channels_to_RGB(pixel_max_empty_def,
-                                    pre_image_base_color, 
-                                    pre_image_mapping_quality)
-            end_time_temp  = datetime.now()
-            print(" | Duration: {}".format(end_time_temp - start_time_temp))
-
-            # Save to dictionary
-            print("Step 4: save to dictionary", end='')
-
-
-            start_time_temp = datetime.now()
-            scaffold_image_dict[store_name] = FINAL_RGB
-            end_time_temp  = datetime.now()
-            print(" | Duration: {}".format(end_time_temp - start_time_temp))
-
-
-            end_time_fragment = datetime.now()
-            right_process += 1
-
-            print("finish ",store_name, end='')
-            print(" | Duration: {}".format(end_time_fragment - start_time_fragment))
-            print("==========================================")
-
-
-            print("==================================================================================")
-
-        print("Final stage: save to pickle")
-        # Store data to pickle(serialize)
-
-        with open(output, "wb") as handle:
-            pickle.dump(scaffold_image_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-        end_time = datetime.now()
-        print("Total duration: {}".format(end_time - start_time))
-    
-    else:
-        total_process = len(bed_df)
-        right_process = 1
-        for scaffold_name in bed_df["scaffold"].unique():
-            bed_selected_df = bed_df[bed_df["scaffold"]==scaffold_name]
-
-            start_time = datetime.now()
-            scaffold_image_dict = {}
-            scaffold_length = fasta_df[fasta_df["scaffold"] == scaffold_name]["len"].values[0]
-
-            # Select useful information in dafaframe of selected scaffold
-            selected_scaffold_df = find_read_based_on_scaffold(scaffold_name, sam)
-
-            if len(selected_scaffold_df) == 0:
-                print("no covered reads")
-                print("==========================================")
-                continue
-            to_use_selected_scaffold_df = make_read_scaffold_df(fasta_df, selected_scaffold_df, scaffold_name, expand)
-            if len(to_use_selected_scaffold_df) == 0:
-                print("no covered reads")
-                print("==========================================")
-                continue
-            to_use_selected_scaffold_df = to_use_selected_scaffold_df.sort_values(by=["start"]) # Sort the reads by start locus
-
-
-            for bed_index in bed_selected_df.index:
-                start = int(bed_df.iloc[bed_index]["start"])
-                end = int(bed_df.iloc[bed_index]["end"])
-                label = bed_df.iloc[bed_index]["label"]
-                ######
-                fragment = np.arange(start,(end+1))
-
-                searching_interval = fragment
-                skip_range = fragment[0] #Customerization # MUST START FROM 1
-                start_time_fragment = datetime.now()
-
-                store_name = scaffold_name + "|" + str(fragment[0]) + " to " + str(fragment[-1]) + "|"+label
-                print("Start process ",right_process," / ",total_process," : ",store_name)
-                print("Step 1: finding reads", end='')
-                start_time_temp = datetime.now()
-                read_selected_matrix = make_read_selected_matrix(scaffold_name, 
-                                                                 searching_interval, 
-                                                                 to_use_selected_scaffold_df, 
-                                                                 ALL_TOUCH_INCLUDED,
-                                                                 window, skip_range, 
-                                                                 depth, ONLY_FILL_THE_LONGEST, core)
-                end_time_temp  = datetime.now()
-                print(" | Duration: {}".format(end_time_temp - start_time_temp))
-
-
-                # Make a 3 dimension image
-                pixel_max = 254  #Customerization
-                bias_of_read = 0 #Customerization
-                mapping_quality_not_provide = 255 #Customerization
-                on_positive_strand_not_provide = 255 #Customerization
-                not_match_ref = pixel_max * 1 #Customerization
-
-                print("Step 2: image pileup", end='')
-                start_time_temp = datetime.now()
-                pre_image_base_color, pre_image_mapping_quality = image_pileup(scaffold_name,
-                                         fasta_df, 
-                                         read_selected_matrix, 
-                                         to_use_selected_scaffold_df, 
-                                         window, 
-                                         depth,
-                                         skip_range,
-                                         searching_interval, 
-                                         pixel_max, 
-                                         bias_of_read, 
-                                         mapping_quality_not_provide, 
-                                         on_positive_strand_not_provide, 
-                                         not_match_ref, core)
-                end_time_temp  = datetime.now()
-                print(" | Duration: {}".format(end_time_temp - start_time_temp))
-
-                print("Step 3: combination", end='')
-                start_time_temp = datetime.now()
-                FINAL_RGB = channels_to_RGB(pixel_max_empty_def,
-                                        pre_image_base_color, 
-                                        pre_image_mapping_quality)
-                end_time_temp  = datetime.now()
-                print(" | Duration: {}".format(end_time_temp - start_time_temp))
-
-                # Save to dictionary
-                print("Step 4: save to dictionary", end='')
-
-
-                start_time_temp = datetime.now()
-                scaffold_image_dict[store_name] = FINAL_RGB
-                end_time_temp  = datetime.now()
-                print(" | Duration: {}".format(end_time_temp - start_time_temp))
-
-
-                end_time_fragment = datetime.now()
-                right_process += 1
-
-                print("finish ",store_name, end='')
-                print(" | Duration: {}".format(end_time_fragment - start_time_fragment))
-                print("==========================================")
-
-
-            print("==================================================================================")
-
-        print("Final stage: save to pickle")
-        # Store data to pickle(serialize)
-
-        with open(output, "wb") as handle:
-            pickle.dump(scaffold_image_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-        end_time = datetime.now()
-        print("Total duration: {}".format(end_time - start_time))
-        
-#### MAIN ######
-parser = argparse.ArgumentParser()
-parser.add_argument("-if", "--inputfasta", type=str, help="the input fasta file")
-parser.add_argument("-is", "--inputsam", type=str, help="the input sam file")
-parser.add_argument("-ib", "--inputbed", type=str, help="the input bed file")
-parser.add_argument("-o", "--output",type=str, help="the output image file name, must end with .pickle")
-parser.add_argument("-w", "--window",type=int, default=65, help="the window of the output image")
-parser.add_argument("-s", "--scaffold", type=str, default = "all_scaffold", help="one scaffold you want to make image")
-parser.add_argument("-c", "--core", type=int, default=40, help="cores you want to use")
-
-args = parser.parse_args()
-
-fasta_df = read_fasta(args.inputfasta)
-sam = read_sam(args.inputsam)
-bed_name = args.inputbed
-scaffold_name = args.scaffold
-core = args.core
-window = args.window
-depth = 2
-expand = 0
-output = args.output
-
-consider_read_of_one_scaffold_by_bed_region(fasta_df, sam, bed_name, scaffold_name, core, window, depth, expand, output, ALL_TOUCH_INCLUDED = 0, ONLY_FILL_THE_LONGEST=True)
-
